@@ -64,7 +64,7 @@ export class Database {
         this.database = sqlite(path)
         this.init()
         this.createUserStatement = this.database.prepare(
-            'INSERT INTO users (id, name, avatarUrl, currentThreadId) VALUES (?, ?, ?, ?);'
+            'INSERT INTO users (id, discordId, name, avatarUrl, currentThreadId) VALUES (?, ?, ?, ?, ?);'
         )
         this.getUserStatement = this.database.prepare('SELECT * FROM users WHERE id = ? LIMIT 1;')
         this.getUserByDiscordIdStatement = this.database.prepare(
@@ -110,7 +110,6 @@ export class Database {
     }
 
     init() {
-        // TODO: need a way to get staff names and profile pictures
         this.database.exec(`
             CREATE TABLE IF NOT EXISTS metadata (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -142,7 +141,13 @@ export class Database {
     }
 
     createUser(user: User): User {
-        this.createUserStatement.run(user.id, user.name, user.avatarUrl, user.currentThreadId)
+        this.createUserStatement.run(
+            user.id,
+            user.discordId,
+            user.name,
+            user.avatarUrl,
+            user.currentThreadId
+        )
         return user
     }
 

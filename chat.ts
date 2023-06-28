@@ -116,8 +116,6 @@ export interface ChatServerThreadMessageData
     extends ChatBaseMessageData<ChatMessageDataType.serverThread> {
     title: string
     id: ThreadId
-    // FIXME: decide on the format for serialized messages.
-    // This is incorrect as client messages should exist too.
     messages: (ChatServerMessageMessageData | ChatServerReplayedMessageMessageData)[]
 }
 
@@ -125,8 +123,8 @@ export interface ChatServerThreadMessageData
 export interface ChatServerMessageMessageData
     extends ChatBaseMessageData<ChatMessageDataType.serverMessage> {
     id: MessageId
-    // FIXME: `string | null` for now. May want to switch to require explicit registration
-    // with the bot later - especially because usually the server nickname is not the username.
+    // This should not be `null` for staff, as registration is required.
+    // However, it will be `null` for users that have not yet set an avatar.
     authorAvatar: string | null
     authorName: string
     timestamp: number

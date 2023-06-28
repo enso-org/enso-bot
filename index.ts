@@ -4,7 +4,6 @@ import * as discord from 'discord.js'
 // TODO: scrollback
 
 import * as chat from './chat'
-import * as commandInterface from './commandInterface'
 import * as database from './database'
 import * as newtype from './newtype'
 
@@ -20,8 +19,6 @@ const MESSAGE_HISTORY_LENGTH = 25
 // ===========
 // === Bot ===
 // ===========
-
-const COMMANDS = new discord.Collection<string, commandInterface.CommandInterface>()
 
 // These should not be methods, to help inlining.
 function getMessageId(message: discord.Message | discord.PartialMessage) {
@@ -43,16 +40,20 @@ function getThreadId(thread: discord.ThreadChannel) {
 class Bot {
     private readonly client = new discord.Client({
         intents: [
-            discord.GatewayIntentBits.Guilds,
             discord.GatewayIntentBits.GuildMessages,
+            /* Required for registering staff. */
+            discord.GatewayIntentBits.DirectMessages,
             discord.GatewayIntentBits.MessageContent,
         ],
+        partials: [discord.Partials.Channel],
     })
     private readonly db: database.Database
     private threads: Record<
         string,
         discord.PrivateThreadChannel | discord.PublicThreadChannel | null
     > = {}
+    private guild!: discord.Guild
+    private staffRole!: discord.Role
     private channel!: discord.TextChannel
     private webhook!: discord.Webhook
 
@@ -66,17 +67,21 @@ class Bot {
     async start() {
         this.client.on(discord.Events.MessageCreate, this.onDiscordMessageCreate.bind(this))
         this.client.on(discord.Events.MessageUpdate, this.onDiscordMessageUpdate.bind(this))
-        this.client.on(discord.Events.InteractionCreate, this.onDiscordInteractionCreate.bind(this))
         // Consider handling thread delete events as well.
         await this.client.login(this.config.discordToken)
         this.chat.onMessage(this.onMessage.bind(this))
+        this.guild = await this.client.guilds.fetch(CONFIG.discordServerId)
+        const staffRole = await this.guild.roles.fetch(CONFIG.discordStaffRoleId)
         const channelId = this.config.discordChannelId
         const channel = await this.client.channels.fetch(channelId)
         if (channel == null) {
             throw new Error(`No channel with ID '${channelId}' exists.`)
         } else if (channel.type !== discord.ChannelType.GuildText) {
             throw new Error(`The channel with ID '${channelId}' is not a guild text channel.`)
+        } else if (staffRole == null) {
+            throw new Error(`The staff role (id '${CONFIG.discordStaffRoleId}') was not found.`)
         } else {
+            this.staffRole = staffRole
             this.channel = channel
             let webhook = (await channel.fetchWebhooks()).find(
                 fetchedWebhook => fetchedWebhook.token != null
@@ -118,26 +123,27 @@ class Bot {
         if (
             message.channel.isThread() &&
             this.db.hasThread(threadId) &&
+            message.type === discord.MessageType.Default &&
             // This is required so that the bot does not try to add its own message to the DB,
             // which will violate a uniqueness constraint.
             !message.author.bot &&
             !message.author.system
         ) {
-            let staff = this.db.getUserByDiscordId(getMessageAuthorId(message))
+            const authorId = getMessageAuthorId(message)
+            let staff = this.db.getUserByDiscordId(authorId)
             if (staff == null) {
-                // await message.delete()
-                // FIXME: this is for testing purposes only
-                staff = {
-                    // eslint-disable-next-line no-restricted-syntax
-                    id: '' as database.UserId,
-                    discordId: getMessageAuthorId(message),
-                    name: message.author.username,
-                    avatarUrl: message.author.avatarURL(),
-                    currentThreadId: getMessageThreadId(message),
-                }
+                await message.delete()
+                const author = await this.client.users.fetch(authorId)
+                await author.send(
+                    `You are not registered with ${CONFIG.botName}.\n` +
+                        `Please send a message with your full name and profile picture.\n` +
+                        `Note that the picture will be stretched into a square and cropped ` +
+                        `to a circle on the client side.`
+                )
+                // This is fine, as it is an exceptional situation.
+                // eslint-disable-next-line no-restricted-syntax
+                return
             }
-            // TODO: add to db
-            // TODO: only in channels corresponding to frontend chat threads
             const messageId = getMessageId(message)
             this.db.createMessage({
                 discordMessageId: messageId,
@@ -163,6 +169,41 @@ class Bot {
                     authorName: staff.name,
                 })
             }
+        } else if (message.channel.isDMBased() && message.type === discord.MessageType.Default) {
+            const guildUser = await this.guild.members.fetch(getMessageAuthorId(message))
+            if (guildUser.roles.cache.has(this.staffRole.id)) {
+                const avatar = message.attachments.at(0)
+                if (message.attachments.size !== 1 || avatar == null) {
+                    await message.channel.send('You must upload exactly one photo for your avatar.')
+                } else if (/^\s*$/.test(message.content)) {
+                    await message.channel.send('You must send your full name with your image.')
+                } else if (message.content.includes('\n')) {
+                    await message.channel.send('Your name must not span multiple names.')
+                } else {
+                    const authorId = getMessageAuthorId(message)
+                    const userId: string = authorId
+                    const dbUserId = newtype.asNewtype<database.UserId>(userId)
+                    if (this.db.getUserByDiscordId(authorId) == null) {
+                        // This is a new user.
+                        this.db.createUser({
+                            id: dbUserId,
+                            discordId: authorId,
+                            name: message.content,
+                            avatarUrl: avatar.proxyURL,
+                            currentThreadId: null,
+                        })
+                        await message.channel.send('Created user profile.')
+                    } else {
+                        this.db.updateUser(dbUserId, user => ({
+                            ...user,
+                            name: message.content,
+                            avatarUrl: avatar.proxyURL,
+                        }))
+                        // This is an existing user updating their name and/or profile picture.
+                        await message.channel.send('Updated user profile.')
+                    }
+                }
+            }
         }
     }
 
@@ -175,7 +216,7 @@ class Bot {
             const messageId = getMessageId(newMessage)
             this.db.updateMessage(messageId, message => ({
                 ...message,
-                // This will never be `null` as it is always an edite message.
+                // This will never be `null` as this event is always emitted with an edited message.
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 editedAt: newMessage.editedTimestamp!,
             }))
@@ -202,37 +243,6 @@ class Bot {
         }
     }
 
-    async onDiscordInteractionCreate(interaction: discord.Interaction) {
-        if (!interaction.isChatInputCommand()) {
-            // TODO: support other command types
-            return
-        } else {
-            const command = COMMANDS.get(interaction.commandName)
-            if (!command) {
-                console.error(`No command matching '${interaction.commandName}' was found.`)
-                return
-            } else {
-                try {
-                    await command.execute(interaction)
-                } catch (error) {
-                    console.error(error)
-                    if (interaction.replied || interaction.deferred) {
-                        await interaction.followUp({
-                            content: 'There was an error executing this command.',
-                            ephemeral: true,
-                        })
-                    } else {
-                        await interaction.reply({
-                            content: 'There was an error executing this command.',
-                            ephemeral: true,
-                        })
-                    }
-                }
-                return
-            }
-        }
-    }
-
     async sendThread(userId: database.UserId, threadId: database.ThreadId | null) {
         if (threadId != null) {
             const thread = this.db.getThread(threadId)
@@ -241,8 +251,13 @@ class Bot {
                 type: chat.ChatMessageDataType.serverThread,
                 id: thread.discordThreadId,
                 title: thread.title,
-                messages: await Promise.all(
-                    messages.map(async dbMessage => {
+                messages: messages.flatMap(
+                    (
+                        dbMessage
+                    ): (
+                        | chat.ChatServerMessageMessageData
+                        | chat.ChatServerReplayedMessageMessageData
+                    )[] => {
                         if (dbMessage.discordAuthorId == null) {
                             // It is a message from the user to staff.
                             const message: chat.ChatServerReplayedMessageMessageData = {
@@ -251,35 +266,26 @@ class Bot {
                                 content: dbMessage.content,
                                 timestamp: dbMessage.createdAt,
                             }
-                            return message
+                            return [message]
                         } else {
                             let staff = this.db.getUserByDiscordId(dbMessage.discordAuthorId)
                             if (staff == null) {
-                                const discordUser = await this.client.users.fetch(
-                                    dbMessage.discordAuthorId
-                                )
-                                // This should never happen. The above line should have a `!`.
-                                // FIXME: this is for testing purposes only
-                                staff = {
-                                    // eslint-disable-next-line no-restricted-syntax
-                                    id: '' as database.UserId,
-                                    discordId: dbMessage.discordAuthorId,
-                                    name: discordUser.username,
-                                    avatarUrl: discordUser.avatarURL(),
-                                    currentThreadId: null,
+                                // This should never happen, as staff messages are deleted
+                                // if the staff member is not registered.
+                                return []
+                            } else {
+                                const message: chat.ChatServerMessageMessageData = {
+                                    type: chat.ChatMessageDataType.serverMessage,
+                                    id: dbMessage.discordMessageId,
+                                    content: dbMessage.content,
+                                    authorAvatar: staff.avatarUrl,
+                                    authorName: staff.name,
+                                    timestamp: dbMessage.createdAt,
                                 }
+                                return [message]
                             }
-                            const message: chat.ChatServerMessageMessageData = {
-                                type: chat.ChatMessageDataType.serverMessage,
-                                id: dbMessage.discordMessageId,
-                                content: dbMessage.content,
-                                authorAvatar: staff.avatarUrl,
-                                authorName: staff.name,
-                                timestamp: dbMessage.createdAt,
-                            }
-                            return message
                         }
-                    })
+                    }
                 ),
             })
         }
