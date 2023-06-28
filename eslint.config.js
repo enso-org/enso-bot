@@ -1,18 +1,19 @@
 /** @file ESLint configuration file. */
+// This is required for the `eslint` imports below to typecheck properly.
+// eslint-disable-next-line @typescript-eslint/triple-slash-reference
+/// <reference path="./modules.d.ts" />
 // @ts-check
 /** NOTE: The "Experimental: Use Flat Config" option must be enabled.
  * Flat config is still not quite mature, so is disabled by default. */
-import * as path from 'node:path'
-import * as url from 'node:url'
+/* globals require, module, __dirname */
 
 // We prefer `import * as name`, however these modules do not support it.
 // This is specialcased in other files, but these modules shouldn't be used in other files anyway.
 /* eslint-disable no-restricted-syntax */
-// FIXME: modules.d.ts is not working
-import eslintJs from '@eslint/js'
-import jsdoc from 'eslint-plugin-jsdoc'
-import tsEslint from '@typescript-eslint/eslint-plugin'
-import tsEslintParser from '@typescript-eslint/parser'
+const eslintJs = require('@eslint/js')
+const jsdoc = require('eslint-plugin-jsdoc')
+const tsEslint = require('@typescript-eslint/eslint-plugin')
+const tsEslintParser = require('@typescript-eslint/parser')
 /* eslint-enable no-restricted-syntax */
 
 /** An explicit whitelist of CommonJS modules, which do not support namespace imports.
@@ -23,7 +24,7 @@ import tsEslintParser from '@typescript-eslint/parser'
  * `yargs` and `react-hot-toast` are modules we explicitly want the default imports of.
  * `node:process` is here because `process.on` does not exist on the namespace import. */
 const DEFAULT_IMPORT_ONLY_MODULES = 'better-sqlite3'
-const DIR_NAME = path.dirname(url.fileURLToPath(import.meta.url))
+const DIR_NAME = __dirname
 const NAME = 'enso'
 const STRING_LITERAL = ':matches(Literal[raw=/^["\']/], TemplateLiteral)'
 const NOT_CAMEL_CASE = '/^(?!_?[a-z][a-z0-9*]*([A-Z0-9][a-z0-9]*)*$)/'
@@ -179,7 +180,7 @@ const RESTRICTED_SYNTAXES = [
 ]
 
 /* eslint-disable @typescript-eslint/naming-convention */
-export default [
+module.exports = [
     eslintJs.configs.recommended,
     {
         plugins: {

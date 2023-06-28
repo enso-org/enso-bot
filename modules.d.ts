@@ -25,6 +25,10 @@ declare module '@eslint/js' {
 
     const DEFAULT: Default
     export default DEFAULT
+
+    // This is exported for commonjs exports only.
+    // eslint-disable-next-line no-restricted-syntax
+    export const configs: Default['configs']
 }
 
 declare module 'eslint-plugin-jsdoc' {

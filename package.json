@@ -2,14 +2,13 @@
   "name": "enso-support",
   "version": "1.0.0",
   "description": "Support bot for Enso",
-  "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "cd dist; node index.js; cd -",
     "dev": "tsx index.ts",
     "build": "npm run bundle && npm run copy-assets",
     "bundle": "mkdir -p dist && esbuild --minify --bundle --platform=node index.ts --outfile=dist/index.js",
-    "copy-assets": "rm -rf dist/build/* && mkdir dist/build && cp -r node_modules/better-sqlite3/build/* dist/build"
+    "copy-assets": "rm -rf dist/build/* && mkdir -p dist/build && echo '{}' > dist/package.json && cp -r node_modules/better-sqlite3/build/* dist/build"
   },
   "author": "",
   "license": "MIT",
