@@ -6,12 +6,12 @@ import * as ws from 'ws'
 import * as db from './database'
 import * as newtype from './newtype'
 
+import CONFIG from './config.json' assert { type: 'json' }
+
 // =================
 // === Constants ===
 // =================
 
-/** The port on which the WebSocket server will run. */
-const PORT = 8082
 /** The endpoint from which user data is retrieved. */
 const USERS_ME_PATH = 'https://7aqkn3tnbc.execute-api.eu-west-1.amazonaws.com/users/me'
 
@@ -32,8 +32,6 @@ export interface User {
 // =====================
 // === Message Types ===
 // =====================
-
-// FIXME[sb]: Consider deduplicating.
 
 // Intentionally the same as in `database.ts`; this one is intended to be copied to the frontend.
 export type ThreadId = newtype.Newtype<string, 'ThreadId'>
@@ -228,7 +226,7 @@ function mustBeOverridden(name: string) {
 
 export class Chat {
     private static instance: Chat
-    server = new ws.WebSocketServer({ port: PORT })
+    server = new ws.WebSocketServer({ port: CONFIG.websocketPort })
     ipToUser: Record<string /* Client IP */, db.UserId> = {}
     /** Required only to find the correct `ipToUser` entry to clean up. */
     userToIp: Record<db.UserId, string /* Client IP */> = {}

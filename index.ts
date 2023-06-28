@@ -1,8 +1,6 @@
 /** @file Entrypoint for the Discord bot. */
 import * as discord from 'discord.js'
 
-// TODO: scrollback
-
 import * as chat from './chat'
 import * as database from './database'
 import * as newtype from './newtype'
@@ -163,7 +161,6 @@ class Bot {
                     type: chat.ChatMessageDataType.serverMessage,
                     timestamp: message.createdTimestamp,
                     id: newtype.asNewtype<database.MessageId>(message.id),
-                    // TODO: support embeds; render markdown?
                     content: message.content,
                     authorAvatar: staff.avatarUrl,
                     authorName: staff.name,
