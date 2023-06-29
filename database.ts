@@ -59,6 +59,7 @@ export class Database {
     private readonly updateMessageStatement: sqlite.Statement
     private readonly getUserThreadsStatement: sqlite.Statement
     private readonly getThreadLastMessagesStatement: sqlite.Statement
+    private readonly getThreadLastMessagesBeforeStatement: sqlite.Statement
 
     constructor(/** Path to the file in which the data is stored. */ path: string) {
         this.database = sqlite(path)
@@ -104,9 +105,16 @@ export class Database {
         this.getUserThreadsStatement = this.database.prepare(
             'SELECT * from threads WHERE userId = ?;'
         )
-        this.getThreadLastMessagesStatement = this.database.prepare(
-            'SELECT * FROM messages WHERE discordThreadId = ? LIMIT ?;'
-        )
+        this.getThreadLastMessagesStatement = this.database.prepare(`
+            SELECT * FROM (
+                SELECT * FROM messages WHERE discordThreadId = ? ORDER BY discordMessageId DESC LIMIT ?
+            ) ORDER BY discordMessageId ASC;
+        `)
+        this.getThreadLastMessagesBeforeStatement = this.database.prepare(`
+            SELECT * FROM (
+                SELECT * FROM messages WHERE discordThreadId = ? AND discordMessageId < ? ORDER BY discordMessageId DESC LIMIT ?
+            ) ORDER BY discordMessageId ASC;
+        `)
     }
 
     init() {
@@ -249,9 +257,22 @@ export class Database {
         return this.getUserThreadsStatement.all(userId) as Thread[]
     }
 
-    getThreadLastMessages(threadId: ThreadId, limit: number): Message[] {
-        // This is safe as the schema is known statically.
-        // eslint-disable-next-line no-restricted-syntax
-        return this.getThreadLastMessagesStatement.all(threadId, limit) as Message[]
+    getThreadLastMessages(
+        threadId: ThreadId,
+        limit: number,
+        getBefore: MessageId | null
+    ): Message[] {
+        if (getBefore != null) {
+            // These type assertions are safe as the schema is known statically.
+            // eslint-disable-next-line no-restricted-syntax
+            return this.getThreadLastMessagesBeforeStatement.all(
+                threadId,
+                getBefore,
+                limit
+            ) as Message[]
+        } else {
+            // eslint-disable-next-line no-restricted-syntax
+            return this.getThreadLastMessagesStatement.all(threadId, limit) as Message[]
+        }
     }
 }

@@ -51,7 +51,6 @@ class Bot {
         discord.PrivateThreadChannel | discord.PublicThreadChannel | null
     > = {}
     private guild!: discord.Guild
-    private staffRole!: discord.Role
     private channel!: discord.TextChannel
     private webhook!: discord.Webhook
 
@@ -68,18 +67,14 @@ class Bot {
         // Consider handling thread delete events as well.
         await this.client.login(this.config.discordToken)
         this.chat.onMessage(this.onMessage.bind(this))
-        this.guild = await this.client.guilds.fetch(CONFIG.discordServerId)
-        const staffRole = await this.guild.roles.fetch(CONFIG.discordStaffRoleId)
+        this.guild = await this.client.guilds.fetch({ guild: CONFIG.discordServerId, force: true })
         const channelId = this.config.discordChannelId
         const channel = await this.client.channels.fetch(channelId)
         if (channel == null) {
             throw new Error(`No channel with ID '${channelId}' exists.`)
         } else if (channel.type !== discord.ChannelType.GuildText) {
             throw new Error(`The channel with ID '${channelId}' is not a guild text channel.`)
-        } else if (staffRole == null) {
-            throw new Error(`The staff role (id '${CONFIG.discordStaffRoleId}') was not found.`)
         } else {
-            this.staffRole = staffRole
             this.channel = channel
             let webhook = (await channel.fetchWebhooks()).find(
                 fetchedWebhook => fetchedWebhook.token != null
@@ -159,16 +154,17 @@ class Bot {
             if (threadId === user.currentThreadId) {
                 await chat.Chat.default().send(thread.userId, {
                     type: chat.ChatMessageDataType.serverMessage,
-                    timestamp: message.createdTimestamp,
                     id: newtype.asNewtype<database.MessageId>(message.id),
-                    content: message.content,
                     authorAvatar: staff.avatarUrl,
                     authorName: staff.name,
+                    content: message.content,
+                    timestamp: message.createdTimestamp,
+                    editedTimestamp: null,
                 })
             }
         } else if (message.channel.isDMBased() && message.type === discord.MessageType.Default) {
             const guildUser = await this.guild.members.fetch(getMessageAuthorId(message))
-            if (guildUser.roles.cache.has(this.staffRole.id)) {
+            if (guildUser.roles.cache.has(CONFIG.discordStaffRoleId)) {
                 const avatar = message.attachments.at(0)
                 if (message.attachments.size !== 1 || avatar == null) {
                     await message.channel.send('You must upload exactly one photo for your avatar.')
@@ -240,50 +236,68 @@ class Bot {
         }
     }
 
-    async sendThread(userId: database.UserId, threadId: database.ThreadId | null) {
+    async sendThread(
+        userId: database.UserId,
+        threadId: database.ThreadId | null,
+        requestType: chat.ChatServerThreadRequestType,
+        getBefore: database.MessageId | null
+    ) {
         if (threadId != null) {
             const thread = this.db.getThread(threadId)
-            const messages = this.db.getThreadLastMessages(threadId, MESSAGE_HISTORY_LENGTH)
+            const messages = this.db.getThreadLastMessages(
+                threadId,
+                MESSAGE_HISTORY_LENGTH + 1,
+                getBefore
+            )
+            const isAtBeginning = messages.length <= MESSAGE_HISTORY_LENGTH
             await this.chat.send(userId, {
                 type: chat.ChatMessageDataType.serverThread,
+                requestType,
                 id: thread.discordThreadId,
                 title: thread.title,
-                messages: messages.flatMap(
-                    (
-                        dbMessage
-                    ): (
-                        | chat.ChatServerMessageMessageData
-                        | chat.ChatServerReplayedMessageMessageData
-                    )[] => {
-                        if (dbMessage.discordAuthorId == null) {
-                            // It is a message from the user to staff.
-                            const message: chat.ChatServerReplayedMessageMessageData = {
-                                type: chat.ChatMessageDataType.serverReplayedMessage,
-                                id: dbMessage.discordMessageId,
-                                content: dbMessage.content,
-                                timestamp: dbMessage.createdAt,
-                            }
-                            return [message]
-                        } else {
-                            let staff = this.db.getUserByDiscordId(dbMessage.discordAuthorId)
-                            if (staff == null) {
-                                // This should never happen, as staff messages are deleted
-                                // if the staff member is not registered.
-                                return []
-                            } else {
-                                const message: chat.ChatServerMessageMessageData = {
-                                    type: chat.ChatMessageDataType.serverMessage,
+                isAtBeginning,
+                messages: messages
+                    .slice(-MESSAGE_HISTORY_LENGTH)
+                    .flatMap(
+                        (
+                            dbMessage
+                        ): (
+                            | chat.ChatServerMessageMessageData
+                            | chat.ChatServerReplayedMessageMessageData
+                        )[] => {
+                            if (dbMessage.discordAuthorId == null) {
+                                // It is a message from the user to staff.
+                                const message: chat.ChatServerReplayedMessageMessageData = {
+                                    type: chat.ChatMessageDataType.serverReplayedMessage,
                                     id: dbMessage.discordMessageId,
                                     content: dbMessage.content,
-                                    authorAvatar: staff.avatarUrl,
-                                    authorName: staff.name,
                                     timestamp: dbMessage.createdAt,
                                 }
                                 return [message]
+                            } else {
+                                let staff = this.db.getUserByDiscordId(dbMessage.discordAuthorId)
+                                if (staff == null) {
+                                    // This should never happen, as staff messages are deleted
+                                    // if the staff member is not registered.
+                                    return []
+                                } else {
+                                    const message: chat.ChatServerMessageMessageData = {
+                                        type: chat.ChatMessageDataType.serverMessage,
+                                        id: dbMessage.discordMessageId,
+                                        content: dbMessage.content,
+                                        authorAvatar: staff.avatarUrl,
+                                        authorName: staff.name,
+                                        timestamp: dbMessage.createdAt,
+                                        editedTimestamp:
+                                            dbMessage.editedAt !== dbMessage.createdAt
+                                                ? dbMessage.editedAt
+                                                : null,
+                                    }
+                                    return [message]
+                                }
                             }
                         }
-                    }
-                ),
+                    ),
             })
         }
     }
@@ -315,7 +329,21 @@ class Bot {
                         hasUnreadMessages: thread.lastMessageReadId !== thread.lastMessageSentId,
                     })),
                 })
-                await this.sendThread(userId, this.db.getUser(userId).currentThreadId)
+                await this.sendThread(
+                    userId,
+                    this.db.getUser(userId).currentThreadId,
+                    message.type,
+                    null
+                )
+                break
+            }
+            case chat.ChatMessageDataType.historyBefore: {
+                await this.sendThread(
+                    userId,
+                    this.db.getUser(userId).currentThreadId,
+                    message.type,
+                    message.messageId
+                )
                 break
             }
             case chat.ChatMessageDataType.newThread: {
@@ -350,8 +378,10 @@ class Bot {
                 })
                 await chat.Chat.default().send(user.id, {
                     type: chat.ChatMessageDataType.serverThread,
+                    requestType: chat.ChatMessageDataType.newThread,
                     id: threadId,
                     title: message.title,
+                    isAtBeginning: true,
                     messages: [
                         {
                             type: chat.ChatMessageDataType.serverReplayedMessage,
@@ -376,7 +406,7 @@ class Bot {
             }
             case chat.ChatMessageDataType.switchThread: {
                 this.db.updateUser(userId, user => ({ ...user, currentThreadId: message.threadId }))
-                await this.sendThread(userId, message.threadId)
+                await this.sendThread(userId, message.threadId, message.type, null)
                 break
             }
             case chat.ChatMessageDataType.message: {
@@ -402,10 +432,13 @@ class Bot {
                 break
             }
             case chat.ChatMessageDataType.reaction: {
-                const thread = await this.getThread(message.threadId)
-                if (thread != null) {
-                    const discordMessage = await thread.messages.fetch(message.messageId)
-                    await discordMessage.react(message.reaction)
+                const threadId = this.db.getUser(userId).currentThreadId
+                if (threadId != null) {
+                    const thread = await this.getThread(threadId)
+                    if (thread != null) {
+                        const discordMessage = await thread.messages.fetch(message.messageId)
+                        await discordMessage.react(message.reaction)
+                    }
                 }
                 break
             }

@@ -56,8 +56,10 @@ export enum ChatMessageDataType {
     // Messages from the client to the server.
     /** The authentication token. */
     authenticate = 'authenticate',
+    /** Sent when the user is requesting scrollback history. */
+    historyBefore = 'history-before',
     /** Create a new thread with an initial message. */
-    newThread = 'newThread',
+    newThread = 'new-thread',
     /** Rename an existing thread. */
     renameThread = 'rename-thread',
     /** Change the currently active thread. */
@@ -108,12 +110,23 @@ export interface ChatServerThreadsMessageData
     threads: ThreadData[]
 }
 
+/** All possible message types that may trigger a {@link ChatServerThreadMessageData} response. */
+export type ChatServerThreadRequestType =
+    | ChatMessageDataType.authenticate
+    | ChatMessageDataType.historyBefore
+    | ChatMessageDataType.newThread
+    | ChatMessageDataType.switchThread
+
 /** Thread details and recent messages.
  * This message is sent every time the user switches threads. */
 export interface ChatServerThreadMessageData
     extends ChatBaseMessageData<ChatMessageDataType.serverThread> {
+    /** The type of the message that triggered this response. */
+    requestType: ChatServerThreadRequestType
     title: string
     id: ThreadId
+    /** `true` if there is no more message history before these messages. */
+    isAtBeginning: boolean
     messages: (ChatServerMessageMessageData | ChatServerReplayedMessageMessageData)[]
 }
 
@@ -125,24 +138,31 @@ export interface ChatServerMessageMessageData
     // However, it will be `null` for users that have not yet set an avatar.
     authorAvatar: string | null
     authorName: string
-    timestamp: number
     content: string
+    /** Milliseconds since the Unix epoch. */
+    timestamp: number
+    /** Milliseconds since the Unix epoch.
+     * Should only be present when receiving message history, because new messages cannot have been
+     * edited. */
+    editedTimestamp: number | null
 }
 
 /** A regular edited chat message from the server to the client. */
 export interface ChatServerEditedMessageMessageData
     extends ChatBaseMessageData<ChatMessageDataType.serverEditedMessage> {
     id: MessageId
-    timestamp: number
     content: string
+    /** Milliseconds since the Unix epoch. */
+    timestamp: number
 }
 
 /** A replayed message from the client to the server. Includes the timestamp of the message. */
 export interface ChatServerReplayedMessageMessageData
     extends ChatBaseMessageData<ChatMessageDataType.serverReplayedMessage> {
     id: MessageId
-    timestamp: number
     content: string
+    /** Milliseconds since the Unix epoch. */
+    timestamp: number
 }
 
 /** A message from the server to the client. */
@@ -161,6 +181,12 @@ export type ChatServerMessageData =
 export interface ChatAuthenticateMessageData
     extends ChatBaseMessageData<ChatMessageDataType.authenticate> {
     accessToken: string
+}
+
+/** Sent when the user is requesting scrollback history. */
+export interface ChatHistoryBeforeMessageData
+    extends ChatBaseMessageData<ChatMessageDataType.historyBefore> {
+    messageId: MessageId
 }
 
 /** Sent when the user sends a message in a new thread. */
@@ -192,7 +218,6 @@ export interface ChatMessageMessageData extends ChatBaseMessageData<ChatMessageD
 
 /** A reaction to a message sent by staff. */
 export interface ChatReactionMessageData extends ChatBaseMessageData<ChatMessageDataType.reaction> {
-    threadId: ThreadId
     messageId: MessageId
     reaction: string
 }
@@ -207,6 +232,7 @@ export interface ChatMarkAsReadMessageData
 /** A message from the client to the server. */
 export type ChatClientMessageData =
     | ChatAuthenticateMessageData
+    | ChatHistoryBeforeMessageData
     | ChatMarkAsReadMessageData
     | ChatMessageMessageData
     | ChatNewThreadMessageData
