@@ -38,6 +38,9 @@ function getThreadId(thread: discord.ThreadChannel) {
 class Bot {
     private readonly client = new discord.Client({
         intents: [
+            /** This is required to get guild info, which is required for listening to all
+             * threads. */
+            discord.GatewayIntentBits.Guilds,
             discord.GatewayIntentBits.GuildMessages,
             /* Required for registering staff. */
             discord.GatewayIntentBits.DirectMessages,
@@ -117,8 +120,7 @@ class Bot {
             message.channel.isThread() &&
             this.db.hasThread(threadId) &&
             message.type === discord.MessageType.Default &&
-            // This is required so that the bot does not try to add its own message to the DB,
-            // which will violate a uniqueness constraint.
+            // This is required so that the bot does not try to add its own message to the DB.
             !message.author.bot &&
             !message.author.system
         ) {
@@ -158,6 +160,7 @@ class Bot {
                     authorAvatar: staff.avatarUrl,
                     authorName: staff.name,
                     content: message.content,
+                    reactions: [],
                     timestamp: message.createdTimestamp,
                     editedTimestamp: null,
                 })
@@ -249,6 +252,26 @@ class Bot {
                 MESSAGE_HISTORY_LENGTH + 1,
                 getBefore
             )
+            const firstMessage = messages[0]
+            const lastMessage = messages[messages.length - 1]
+            const reactions =
+                firstMessage != null && lastMessage != null
+                    ? this.db
+                          .getReactions(
+                              threadId,
+                              firstMessage.discordMessageId,
+                              lastMessage.discordMessageId
+                          )
+                          .reduce<Record<database.MessageId, database.ReactionSymbol[]>>(
+                              (mapping, reaction) => {
+                                  const reactionsForMessage = (mapping[reaction.discordMessageId] =
+                                      mapping[reaction.discordMessageId] ?? [])
+                                  reactionsForMessage.push(reaction.reaction)
+                                  return mapping
+                              },
+                              {}
+                          )
+                    : {}
             const isAtBeginning = messages.length <= MESSAGE_HISTORY_LENGTH
             await this.chat.send(userId, {
                 type: chat.ChatMessageDataType.serverThread,
@@ -285,6 +308,7 @@ class Bot {
                                         type: chat.ChatMessageDataType.serverMessage,
                                         id: dbMessage.discordMessageId,
                                         content: dbMessage.content,
+                                        reactions: reactions[dbMessage.discordMessageId] ?? [],
                                         authorAvatar: staff.avatarUrl,
                                         authorName: staff.name,
                                         timestamp: dbMessage.createdAt,
@@ -431,13 +455,30 @@ class Bot {
                 }
                 break
             }
-            case chat.ChatMessageDataType.reaction: {
+            case chat.ChatMessageDataType.reaction:
+            case chat.ChatMessageDataType.removeReaction: {
                 const threadId = this.db.getUser(userId).currentThreadId
-                if (threadId != null) {
-                    const thread = await this.getThread(threadId)
-                    if (thread != null) {
-                        const discordMessage = await thread.messages.fetch(message.messageId)
+                const thread = threadId != null ? await this.getThread(threadId) : null
+                if (thread != null) {
+                    const discordMessage = await thread.messages.fetch(message.messageId)
+                    const isAdding = message.type === chat.ChatMessageDataType.reaction
+                    if (isAdding) {
                         await discordMessage.react(message.reaction)
+                        this.db.createReaction({
+                            discordMessageId: getMessageId(discordMessage),
+                            reaction: message.reaction,
+                        })
+                    } else {
+                        const botId = this.client.user?.id
+                        if (botId != null) {
+                            await discordMessage.reactions
+                                .resolve(message.reaction)
+                                ?.users.remove(botId)
+                        }
+                        this.db.deleteReaction({
+                            discordMessageId: getMessageId(discordMessage),
+                            reaction: message.reaction,
+                        })
                     }
                 }
                 break

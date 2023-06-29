@@ -3,6 +3,13 @@ import sqlite from 'better-sqlite3'
 
 import * as newtype from './newtype.js'
 
+// =============
+// === Types ===
+// =============
+
+/** All possible emojis that can be used as a reaction on a chat message. */
+export type ReactionSymbol = '❤️' | '🎉' | '👀' | '👍' | '👎' | '😀' | '🙁'
+
 // ==============
 // === Tables ===
 // ==============
@@ -39,10 +46,16 @@ export interface Message {
     editedAt: number
 }
 
+export interface Reaction {
+    discordMessageId: MessageId
+    reaction: ReactionSymbol
+}
+
 // ================
 // === Database ===
 // ================
 
+/** A typed wrapper around sqlite. */
 export class Database {
     private readonly database: sqlite.Database
     private readonly getUserStatement: sqlite.Statement
@@ -60,6 +73,9 @@ export class Database {
     private readonly getUserThreadsStatement: sqlite.Statement
     private readonly getThreadLastMessagesStatement: sqlite.Statement
     private readonly getThreadLastMessagesBeforeStatement: sqlite.Statement
+    private readonly createReactionStatement: sqlite.Statement
+    private readonly getReactionsStatement: sqlite.Statement
+    private readonly deleteReactionStatement: sqlite.Statement
 
     constructor(/** Path to the file in which the data is stored. */ path: string) {
         this.database = sqlite(path)
@@ -107,14 +123,28 @@ export class Database {
         )
         this.getThreadLastMessagesStatement = this.database.prepare(`
             SELECT * FROM (
-                SELECT * FROM messages WHERE discordThreadId = ? ORDER BY discordMessageId DESC LIMIT ?
+                SELECT * FROM messages WHERE discordThreadId = ?
+                    ORDER BY discordMessageId DESC LIMIT ?
             ) ORDER BY discordMessageId ASC;
         `)
         this.getThreadLastMessagesBeforeStatement = this.database.prepare(`
             SELECT * FROM (
-                SELECT * FROM messages WHERE discordThreadId = ? AND discordMessageId < ? ORDER BY discordMessageId DESC LIMIT ?
+                SELECT * FROM messages WHERE discordThreadId = ? AND discordMessageId < ?
+                    ORDER BY discordMessageId DESC LIMIT ?
             ) ORDER BY discordMessageId ASC;
         `)
+        this.createReactionStatement = this.database.prepare(
+            'INSERT INTO reactions (discordMessageId, reaction) VALUES (?, ?);'
+        )
+        this.getReactionsStatement = this.database.prepare(`
+            SELECT reactions.discordMessageId, reaction FROM messages
+                RIGHT JOIN reactions ON messages.discordMessageId = reactions.discordMessageId
+                WHERE discordThreadId = ? AND messages.discordMessageId >= ?
+                    AND messages.discordMessageId <= ?;
+        `)
+        this.deleteReactionStatement = this.database.prepare(
+            'DELETE FROM reactions WHERE discordMessageId = ? AND reaction = ?;'
+        )
     }
 
     init() {
@@ -144,6 +174,11 @@ export class Database {
                 content TEXT NOT NULL,
                 createdAt INTEGER NOT NULL,
                 editedAt INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS reactions (
+                discordMessageId VARCHAR(25),
+                reaction VARCHAR(8),
+                PRIMARY KEY (discordMessageId, reaction)
             );
         `)
     }
@@ -274,5 +309,21 @@ export class Database {
             // eslint-disable-next-line no-restricted-syntax
             return this.getThreadLastMessagesStatement.all(threadId, limit) as Message[]
         }
+    }
+
+    createReaction(reaction: Reaction): Reaction {
+        this.createReactionStatement.run(reaction.discordMessageId, reaction.reaction)
+        return reaction
+    }
+
+    getReactions(threadId: ThreadId, startMessageId: MessageId, endMessageId: MessageId) {
+        // This type assertion is type safe as the schema is known statically.
+        // eslint-disable-next-line no-restricted-syntax
+        return this.getReactionsStatement.all(threadId, startMessageId, endMessageId) as Reaction[]
+    }
+
+    deleteReaction(reaction: Reaction): Reaction {
+        this.deleteReactionStatement.run(reaction.discordMessageId, reaction.reaction)
+        return reaction
     }
 }

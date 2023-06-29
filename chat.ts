@@ -29,9 +29,15 @@ export interface User {
     email: EmailAddress
 }
 
+// `ReactionSymbol` is duplicated in `database.ts` below, but it SHOULD be defined here too
+// to make it easy to copy to the frontend.
+
 // =====================
 // === Message Types ===
 // =====================
+
+/** All possible emojis that can be used as a reaction on a chat message. */
+type ReactionSymbol = '❤️' | '🎉' | '👀' | '👍' | '👎' | '😀' | '🙁'
 
 // Intentionally the same as in `database.ts`; this one is intended to be copied to the frontend.
 export type ThreadId = newtype.Newtype<string, 'ThreadId'>
@@ -68,6 +74,8 @@ export enum ChatMessageDataType {
     message = 'message',
     /** A reaction from the client. */
     reaction = 'reaction',
+    /** Removal of a reaction from the client. */
+    removeReaction = 'remove-reaction',
     /** Mark a message as read. Used to determine whether to show the notification dot
      * next to a thread. */
     markAsRead = 'mark-as-read',
@@ -139,6 +147,7 @@ export interface ChatServerMessageMessageData
     authorAvatar: string | null
     authorName: string
     content: string
+    reactions: ReactionSymbol[]
     /** Milliseconds since the Unix epoch. */
     timestamp: number
     /** Milliseconds since the Unix epoch.
@@ -219,7 +228,14 @@ export interface ChatMessageMessageData extends ChatBaseMessageData<ChatMessageD
 /** A reaction to a message sent by staff. */
 export interface ChatReactionMessageData extends ChatBaseMessageData<ChatMessageDataType.reaction> {
     messageId: MessageId
-    reaction: string
+    reaction: ReactionSymbol
+}
+
+/** Removal of a reaction from the client. */
+export interface ChatRemoveReactionMessageData
+    extends ChatBaseMessageData<ChatMessageDataType.removeReaction> {
+    messageId: MessageId
+    reaction: ReactionSymbol
 }
 
 /** Sent when the user scrolls to the bottom of a chat thread. */
@@ -237,6 +253,7 @@ export type ChatClientMessageData =
     | ChatMessageMessageData
     | ChatNewThreadMessageData
     | ChatReactionMessageData
+    | ChatRemoveReactionMessageData
     | ChatRenameThreadMessageData
     | ChatSwitchThreadMessageData
 
