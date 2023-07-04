@@ -1,8 +1,8 @@
 /** @file Handles loading and storing data. */
 import sqlite from 'better-sqlite3'
 
-import * as newtype from './newtype'
 import * as reactionModule from './reaction'
+import * as schema from './schema'
 
 // ==================
 // === Re-exports ===
@@ -10,47 +10,6 @@ import * as reactionModule from './reaction'
 
 /** All possible emojis that can be used as a reaction on a chat message. */
 export type ReactionSymbol = reactionModule.ReactionSymbol
-
-// ==============
-// === Tables ===
-// ==============
-
-export type UserId = newtype.Newtype<string, 'UserId'>
-export type DiscordUserId = newtype.Newtype<string, 'DiscordUserId'>
-export type ThreadId = newtype.Newtype<string, 'ThreadId'>
-export type MessageId = newtype.Newtype<string, 'MessageId'>
-
-export interface User {
-    id: UserId
-    discordId: DiscordUserId | null
-    name: string
-    /** Null when the user has not yet set an avatar. */
-    avatarUrl: string | null
-    /** Null when the user has not yet opened their first thread. */
-    currentThreadId: ThreadId | null
-}
-
-export interface Thread {
-    discordThreadId: ThreadId
-    userId: UserId
-    title: string
-    lastMessageReadId: MessageId
-    lastMessageSentId: MessageId
-}
-
-export interface Message {
-    discordMessageId: MessageId
-    discordThreadId: ThreadId
-    discordAuthorId: DiscordUserId | null
-    content: string
-    createdAt: number
-    editedAt: number
-}
-
-export interface Reaction {
-    discordMessageId: MessageId
-    reaction: reactionModule.ReactionSymbol
-}
 
 // ================
 // === Database ===
@@ -184,7 +143,7 @@ export class Database {
         `)
     }
 
-    createUser(user: User): User {
+    createUser(user: schema.User): schema.User {
         this.createUserStatement.run(
             user.id,
             user.discordId,
@@ -195,19 +154,19 @@ export class Database {
         return user
     }
 
-    getUser(userId: UserId): User {
+    getUser(userId: schema.UserId): schema.User {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return this.getUserStatement.get(userId) as User
+        return this.getUserStatement.get(userId) as schema.User
     }
 
-    getUserByDiscordId(discordUserId: DiscordUserId): User | null {
+    getUserByDiscordId(discordUserId: schema.DiscordUserId): schema.User | null {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return (this.getUserByDiscordIdStatement.get(discordUserId) ?? null) as User | null
+        return (this.getUserByDiscordIdStatement.get(discordUserId) ?? null) as schema.User | null
     }
 
-    updateUser(userId: UserId, fn: (user: User) => User): User {
+    updateUser(userId: schema.UserId, fn: (user: schema.User) => schema.User): schema.User {
         const newUser = fn(this.getUser(userId))
         this.updateUserStatement.run(
             newUser.discordId,
@@ -219,11 +178,11 @@ export class Database {
         return newUser
     }
 
-    hasUser(userId: UserId): boolean {
+    hasUser(userId: schema.UserId): boolean {
         return this.hasUserStatement.all(userId).length !== 0
     }
 
-    createThread(thread: Thread): Thread {
+    createThread(thread: schema.Thread): schema.Thread {
         this.createThreadStatement.run(
             thread.discordThreadId,
             thread.userId,
@@ -234,13 +193,16 @@ export class Database {
         return thread
     }
 
-    getThread(threadId: ThreadId): Thread {
+    getThread(threadId: schema.ThreadId): schema.Thread {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return this.getThreadStatement.get(threadId) as Thread
+        return this.getThreadStatement.get(threadId) as schema.Thread
     }
 
-    updateThread(threadId: ThreadId, fn: (data: Thread) => Thread): Thread {
+    updateThread(
+        threadId: schema.ThreadId,
+        fn: (data: schema.Thread) => schema.Thread
+    ): schema.Thread {
         const newThread = fn(this.getThread(threadId))
         this.updateThreadStatement.run(
             newThread.userId,
@@ -252,11 +214,11 @@ export class Database {
         return newThread
     }
 
-    hasThread(threadId: ThreadId): boolean {
+    hasThread(threadId: schema.ThreadId): boolean {
         return this.hasThreadStatement.all(threadId).length !== 0
     }
 
-    createMessage(message: Message): Message {
+    createMessage(message: schema.Message): schema.Message {
         this.createMessageStatement.run(
             message.discordMessageId,
             message.discordThreadId,
@@ -268,13 +230,16 @@ export class Database {
         return message
     }
 
-    getMessage(messageId: MessageId): Message {
+    getMessage(messageId: schema.MessageId): schema.Message {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return this.getMessageStatement.get(messageId) as Message
+        return this.getMessageStatement.get(messageId) as schema.Message
     }
 
-    updateMessage(messageId: MessageId, fn: (data: Message) => Message): Message {
+    updateMessage(
+        messageId: schema.MessageId,
+        fn: (data: schema.Message) => schema.Message
+    ): schema.Message {
         const newMessage = fn(this.getMessage(messageId))
         this.updateMessageStatement.run(
             newMessage.discordThreadId,
@@ -287,17 +252,17 @@ export class Database {
         return newMessage
     }
 
-    getUserThreads(userId: UserId): Thread[] {
+    getUserThreads(userId: schema.UserId): schema.Thread[] {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return this.getUserThreadsStatement.all(userId) as Thread[]
+        return this.getUserThreadsStatement.all(userId) as schema.Thread[]
     }
 
     getThreadLastMessages(
-        threadId: ThreadId,
+        threadId: schema.ThreadId,
         limit: number,
-        getBefore: MessageId | null
-    ): Message[] {
+        getBefore: schema.MessageId | null
+    ): schema.Message[] {
         if (getBefore != null) {
             // These type assertions are safe as the schema is known statically.
             // eslint-disable-next-line no-restricted-syntax
@@ -305,25 +270,33 @@ export class Database {
                 threadId,
                 getBefore,
                 limit
-            ) as Message[]
+            ) as schema.Message[]
         } else {
             // eslint-disable-next-line no-restricted-syntax
-            return this.getThreadLastMessagesStatement.all(threadId, limit) as Message[]
+            return this.getThreadLastMessagesStatement.all(threadId, limit) as schema.Message[]
         }
     }
 
-    createReaction(reaction: Reaction): Reaction {
+    createReaction(reaction: schema.Reaction): schema.Reaction {
         this.createReactionStatement.run(reaction.discordMessageId, reaction.reaction)
         return reaction
     }
 
-    getReactions(threadId: ThreadId, startMessageId: MessageId, endMessageId: MessageId) {
+    getReactions(
+        threadId: schema.ThreadId,
+        startMessageId: schema.MessageId,
+        endMessageId: schema.MessageId
+    ) {
         // This type assertion is type safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
-        return this.getReactionsStatement.all(threadId, startMessageId, endMessageId) as Reaction[]
+        return this.getReactionsStatement.all(
+            threadId,
+            startMessageId,
+            endMessageId
+        ) as schema.Reaction[]
     }
 
-    deleteReaction(reaction: Reaction): Reaction {
+    deleteReaction(reaction: schema.Reaction): schema.Reaction {
         this.deleteReactionStatement.run(reaction.discordMessageId, reaction.reaction)
         return reaction
     }

@@ -3,9 +3,9 @@ import * as http from 'node:http'
 
 import * as ws from 'ws'
 
-import * as db from './database'
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
+import * as schema from './schema'
 
 // =================
 // === Constants ===
@@ -30,7 +30,7 @@ export type EmailAddress = newtype.Newtype<string, 'EmailAddress'>
 
 /** A user of the application. */
 export interface User {
-    id: db.UserId
+    id: schema.UserId
     name: string
     email: EmailAddress
 }
@@ -93,7 +93,7 @@ interface ChatBaseMessageData<Type extends ChatMessageDataType> {
 /** Sent to the main file with user information. */
 export interface ChatInternalAuthenticateMessageData
     extends ChatBaseMessageData<ChatMessageDataType.internalAuthenticate> {
-    userId: db.UserId
+    userId: schema.UserId
     userName: string
 }
 
@@ -270,12 +270,12 @@ function mustBeOverridden(name: string) {
 export class Chat {
     private static instance: Chat
     server: ws.WebSocketServer
-    ipToUser: Record<string /* Client IP */, db.UserId> = {}
+    ipToUser: Record<string /* Client IP */, schema.UserId> = {}
     /** Required only to find the correct `ipToUser` entry to clean up. */
-    userToIp: Record<db.UserId, string /* Client IP */> = {}
-    userToWebsocket: Record<db.UserId, ws.WebSocket> = {}
+    userToIp: Record<schema.UserId, string /* Client IP */> = {}
+    userToWebsocket: Record<schema.UserId, ws.WebSocket> = {}
     messageCallback: (
-        userId: db.UserId,
+        userId: schema.UserId,
         message: ChatClientMessageData | ChatInternalMessageData
     ) => Promise<void> | void = mustBeOverridden('Chat.messageCallback')
 
@@ -302,7 +302,7 @@ export class Chat {
         this.messageCallback = callback
     }
 
-    async send(userId: db.UserId, message: ChatServerMessageData) {
+    async send(userId: schema.UserId, message: ChatServerMessageData) {
         const websocket = this.userToWebsocket[userId]
         if (websocket == null) {
             // The user is not online. This is not an error.
