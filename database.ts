@@ -4,6 +4,13 @@ import sqlite from 'better-sqlite3'
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
 
+// ==================
+// === Re-exports ===
+// ==================
+
+/** All possible emojis that can be used as a reaction on a chat message. */
+export type ReactionSymbol = reactionModule.ReactionSymbol
+
 // ==============
 // === Tables ===
 // ==============

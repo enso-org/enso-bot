@@ -13,6 +13,8 @@ import CONFIG from './config.json' assert { type: 'json' }
 
 /** The maximum number of messages to fetch when opening a new thread. */
 const MESSAGE_HISTORY_LENGTH = 25
+/** The port on which the WebSocket server will be started. */
+const WEBSOCKET_PORT = CONFIG.websocketPort
 
 // ===========
 // === Bot ===
@@ -154,7 +156,7 @@ class Bot {
             }))
             const user = this.db.getUser(thread.userId)
             if (threadId === user.currentThreadId) {
-                await chat.Chat.default().send(thread.userId, {
+                await chat.Chat.default(WEBSOCKET_PORT).send(thread.userId, {
                     type: chat.ChatMessageDataType.serverMessage,
                     id: newtype.asNewtype<database.MessageId>(message.id),
                     authorAvatar: staff.avatarUrl,
@@ -228,7 +230,7 @@ class Bot {
                 const thread = this.db.getThread(threadId)
                 const user = this.db.getUser(thread.userId)
                 if (threadId === user.currentThreadId) {
-                    await chat.Chat.default().send(thread.userId, {
+                    await chat.Chat.default(WEBSOCKET_PORT).send(thread.userId, {
                         type: chat.ChatMessageDataType.serverEditedMessage,
                         timestamp: newMessage.editedTimestamp,
                         id: newtype.asNewtype<database.MessageId>(newMessage.id),
@@ -400,7 +402,7 @@ class Bot {
                     createdAt: discordMessage.createdTimestamp,
                     editedAt: discordMessage.createdTimestamp,
                 })
-                await chat.Chat.default().send(user.id, {
+                await chat.Chat.default(WEBSOCKET_PORT).send(user.id, {
                     type: chat.ChatMessageDataType.serverThread,
                     requestType: chat.ChatMessageDataType.newThread,
                     id: threadId,
@@ -494,5 +496,5 @@ class Bot {
     }
 }
 
-const BOT = new Bot(CONFIG, chat.Chat.default())
+const BOT = new Bot(CONFIG, chat.Chat.default(WEBSOCKET_PORT))
 void BOT.start()

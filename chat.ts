@@ -7,8 +7,6 @@ import * as db from './database'
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
 
-import CONFIG from './config.json' assert { type: 'json' }
-
 // =================
 // === Constants ===
 // =================
@@ -271,7 +269,7 @@ function mustBeOverridden(name: string) {
 
 export class Chat {
     private static instance: Chat
-    server = new ws.WebSocketServer({ port: CONFIG.websocketPort })
+    server: ws.WebSocketServer
     ipToUser: Record<string /* Client IP */, db.UserId> = {}
     /** Required only to find the correct `ipToUser` entry to clean up. */
     userToIp: Record<db.UserId, string /* Client IP */> = {}
@@ -281,7 +279,8 @@ export class Chat {
         message: ChatClientMessageData | ChatInternalMessageData
     ) => Promise<void> | void = mustBeOverridden('Chat.messageCallback')
 
-    constructor() {
+    constructor(port: number) {
+        this.server = new ws.WebSocketServer({ port })
         this.server.on('connection', (websocket, req) => {
             websocket.on('error', error => {
                 this.onWebSocketError(websocket, req, error)
@@ -293,10 +292,10 @@ export class Chat {
         })
     }
 
-    static default() {
+    static default(port: number) {
         // This will be `undefined` on the first run.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        return (Chat.instance ??= new Chat())
+        return (Chat.instance ??= new Chat(port))
     }
 
     onMessage(callback: NonNullable<typeof this.messageCallback>) {
