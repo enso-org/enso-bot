@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "description": "Support bot for Enso",
   "main": "index.js",
+  "comments": {
+    "build-bot": "This MUST NOT be `build`, otherwise it gets automatically run when this repository is used as a Git NPM dependency."
+  },
   "scripts": {
     "start": "cd dist; node index.js; cd -",
     "dev": "tsx index.ts",
-    "build": "npm run bundle && npm run copy-assets",
+    "build-bot": "npm run bundle && npm run copy-assets",
     "bundle": "mkdir -p dist && esbuild --minify --bundle --platform=node index.ts --outfile=dist/index.js",
     "copy-assets": "rm -rf dist/build/* && mkdir -p dist/build && echo '{}' > dist/package.json && cp -r node_modules/better-sqlite3/build/* dist/build"
   },
