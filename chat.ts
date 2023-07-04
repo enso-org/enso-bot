@@ -5,6 +5,7 @@ import * as ws from 'ws'
 
 import * as db from './database'
 import * as newtype from './newtype'
+import * as reactionModule from './reaction'
 
 import CONFIG from './config.json' assert { type: 'json' }
 
@@ -14,6 +15,13 @@ import CONFIG from './config.json' assert { type: 'json' }
 
 /** The endpoint from which user data is retrieved. */
 const USERS_ME_PATH = 'https://7aqkn3tnbc.execute-api.eu-west-1.amazonaws.com/users/me'
+
+// ==================
+// === Re-exports ===
+// ==================
+
+/** All possible emojis that can be used as a reaction on a chat message. */
+export type ReactionSymbol = reactionModule.ReactionSymbol
 
 // =======================
 // === AWS Cognito API ===
@@ -29,15 +37,9 @@ export interface User {
     email: EmailAddress
 }
 
-// `ReactionSymbol` is duplicated in `database.ts` below, but it SHOULD be defined here too
-// to make it easy to copy to the frontend.
-
 // =====================
 // === Message Types ===
 // =====================
-
-/** All possible emojis that can be used as a reaction on a chat message. */
-type ReactionSymbol = '❤️' | '🎉' | '👀' | '👍' | '👎' | '😀' | '🙁'
 
 // Intentionally the same as in `database.ts`; this one is intended to be copied to the frontend.
 export type ThreadId = newtype.Newtype<string, 'ThreadId'>
@@ -108,7 +110,7 @@ export type ChatInternalMessageData = ChatInternalAuthenticateMessageData
 /** Basic metadata for a single thread. */
 export interface ThreadData {
     title: string
-    id: string
+    id: ThreadId
     hasUnreadMessages: boolean
 }
 
@@ -147,7 +149,7 @@ export interface ChatServerMessageMessageData
     authorAvatar: string | null
     authorName: string
     content: string
-    reactions: ReactionSymbol[]
+    reactions: reactionModule.ReactionSymbol[]
     /** Milliseconds since the Unix epoch. */
     timestamp: number
     /** Milliseconds since the Unix epoch.
@@ -228,14 +230,14 @@ export interface ChatMessageMessageData extends ChatBaseMessageData<ChatMessageD
 /** A reaction to a message sent by staff. */
 export interface ChatReactionMessageData extends ChatBaseMessageData<ChatMessageDataType.reaction> {
     messageId: MessageId
-    reaction: ReactionSymbol
+    reaction: reactionModule.ReactionSymbol
 }
 
 /** Removal of a reaction from the client. */
 export interface ChatRemoveReactionMessageData
     extends ChatBaseMessageData<ChatMessageDataType.removeReaction> {
     messageId: MessageId
-    reaction: ReactionSymbol
+    reaction: reactionModule.ReactionSymbol
 }
 
 /** Sent when the user scrolls to the bottom of a chat thread. */

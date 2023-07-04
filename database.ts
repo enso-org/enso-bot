@@ -1,14 +1,8 @@
 /** @file Handles loading and storing data. */
 import sqlite from 'better-sqlite3'
 
-import * as newtype from './newtype.js'
-
-// =============
-// === Types ===
-// =============
-
-/** All possible emojis that can be used as a reaction on a chat message. */
-export type ReactionSymbol = '❤️' | '🎉' | '👀' | '👍' | '👎' | '😀' | '🙁'
+import * as newtype from './newtype'
+import * as reactionModule from './reaction'
 
 // ==============
 // === Tables ===
@@ -48,7 +42,7 @@ export interface Message {
 
 export interface Reaction {
     discordMessageId: MessageId
-    reaction: ReactionSymbol
+    reaction: reactionModule.ReactionSymbol
 }
 
 // ================
