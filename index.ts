@@ -4,6 +4,7 @@ import * as discord from 'discord.js'
 import * as chat from './chat'
 import * as database from './database'
 import * as newtype from './newtype'
+import * as schema from './schema'
 
 import CONFIG from './config.json' assert { type: 'json' }
 
@@ -22,19 +23,19 @@ const WEBSOCKET_PORT = CONFIG.websocketPort
 
 // These should not be methods, to help inlining.
 function getMessageId(message: discord.Message | discord.PartialMessage) {
-    return newtype.asNewtype<database.MessageId>(message.id)
+    return newtype.asNewtype<schema.MessageId>(message.id)
 }
 
 function getMessageThreadId(message: discord.Message | discord.PartialMessage) {
-    return newtype.asNewtype<database.ThreadId>(message.channelId)
+    return newtype.asNewtype<schema.ThreadId>(message.channelId)
 }
 
 function getMessageAuthorId(message: discord.Message) {
-    return newtype.asNewtype<database.DiscordUserId>(message.author.id)
+    return newtype.asNewtype<schema.DiscordUserId>(message.author.id)
 }
 
 function getThreadId(thread: discord.ThreadChannel) {
-    return newtype.asNewtype<database.ThreadId>(thread.id)
+    return newtype.asNewtype<schema.ThreadId>(thread.id)
 }
 
 class Bot {
@@ -158,7 +159,7 @@ class Bot {
             if (threadId === user.currentThreadId) {
                 await chat.Chat.default(WEBSOCKET_PORT).send(thread.userId, {
                     type: chat.ChatMessageDataType.serverMessage,
-                    id: newtype.asNewtype<database.MessageId>(message.id),
+                    id: newtype.asNewtype<schema.MessageId>(message.id),
                     authorAvatar: staff.avatarUrl,
                     authorName: staff.name,
                     content: message.content,
@@ -180,7 +181,7 @@ class Bot {
                 } else {
                     const authorId = getMessageAuthorId(message)
                     const userId: string = authorId
-                    const dbUserId = newtype.asNewtype<database.UserId>(userId)
+                    const dbUserId = newtype.asNewtype<schema.UserId>(userId)
                     if (this.db.getUserByDiscordId(authorId) == null) {
                         // This is a new user.
                         this.db.createUser({
@@ -233,7 +234,7 @@ class Bot {
                     await chat.Chat.default(WEBSOCKET_PORT).send(thread.userId, {
                         type: chat.ChatMessageDataType.serverEditedMessage,
                         timestamp: newMessage.editedTimestamp,
-                        id: newtype.asNewtype<database.MessageId>(newMessage.id),
+                        id: newtype.asNewtype<schema.MessageId>(newMessage.id),
                         content: newMessage.content,
                     })
                 }
@@ -242,10 +243,10 @@ class Bot {
     }
 
     async sendThread(
-        userId: database.UserId,
-        threadId: database.ThreadId | null,
+        userId: schema.UserId,
+        threadId: schema.ThreadId | null,
         requestType: chat.ChatServerThreadRequestType,
-        getBefore: database.MessageId | null
+        getBefore: schema.MessageId | null
     ) {
         if (threadId != null) {
             const thread = this.db.getThread(threadId)
@@ -264,7 +265,7 @@ class Bot {
                               firstMessage.discordMessageId,
                               lastMessage.discordMessageId
                           )
-                          .reduce<Record<database.MessageId, database.ReactionSymbol[]>>(
+                          .reduce<Record<schema.MessageId, database.ReactionSymbol[]>>(
                               (mapping, reaction) => {
                                   const reactionsForMessage = (mapping[reaction.discordMessageId] =
                                       mapping[reaction.discordMessageId] ?? [])
@@ -329,7 +330,7 @@ class Bot {
     }
 
     async onMessage(
-        userId: database.UserId,
+        userId: schema.UserId,
         message: chat.ChatClientMessageData | chat.ChatInternalMessageData
     ) {
         switch (message.type) {
