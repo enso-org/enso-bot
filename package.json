@@ -1,0 +1,34 @@
+{
+  "name": "enso-support",
+  "version": "1.0.0",
+  "description": "Support bot for Enso",
+  "main": "index.js",
+  "comments": {
+    "build-bot": "This MUST NOT be `build`, otherwise it gets automatically run when this repository is used as a Git NPM dependency."
+  },
+  "scripts": {
+    "start": "cd dist; node index.js; cd -",
+    "dev": "tsx index.ts",
+    "build-bot": "npm run bundle && npm run copy-assets",
+    "bundle": "mkdir -p dist && esbuild --minify --bundle --platform=node index.ts --outfile=dist/index.js",
+    "copy-assets": "rm -rf dist/build/* && mkdir -p dist/build && echo '{}' > dist/package.json && cp -r node_modules/better-sqlite3/build/* dist/build"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^8.4.0",
+    "discord.js": "^14.11.0",
+    "ws": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.4",
+    "@types/node": "^20.3.3",
+    "@types/ws": "^8.5.4",
+    "@typescript-eslint/eslint-plugin": "^5.59.5",
+    "@typescript-eslint/parser": "^5.59.5",
+    "esbuild": "^0.17.18",
+    "eslint": "^8.40.0",
+    "eslint-plugin-jsdoc": "^44.1.0",
+    "tsx": "^3.12.7"
+  }
+}
