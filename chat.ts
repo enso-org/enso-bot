@@ -30,7 +30,7 @@ export type EmailAddress = newtype.Newtype<string, 'EmailAddress'>
 
 /** A user of the application. */
 export interface User {
-    id: schema.UserId
+    id: string
     name: string
     email: EmailAddress
 }
@@ -380,13 +380,13 @@ export class Chat {
                 }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const userInfo: User = await userInfoRequest.json()
-                userId = userInfo.id
+                userId = newtype.asNewtype<schema.UserId>(`${userInfo.id} ${userInfo.email}`)
                 this.ipToUser[clientAddress] = userId
                 this.userToIp[userId] = clientAddress
                 this.userToWebsocket[userId] = websocket
                 await this.messageCallback(userId, {
                     type: ChatMessageDataType.internalAuthenticate,
-                    userId: userInfo.id,
+                    userId,
                     userName: userInfo.name,
                 })
             }
