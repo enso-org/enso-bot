@@ -68,11 +68,29 @@ class Bot {
 
     /** This MUST be called and awaited before doing anything with the bot. */
     async start() {
-        this.client.on(discord.Events.MessageCreate, this.onDiscordMessageCreate.bind(this))
-        this.client.on(discord.Events.MessageUpdate, this.onDiscordMessageUpdate.bind(this))
+        this.client.on(discord.Events.MessageCreate, async message => {
+            try {
+                await this.onDiscordMessageCreate(message)
+            } catch (error) {
+                console.error(error)
+            }
+        })
+        this.client.on(discord.Events.MessageUpdate, async (oldMessage, newMessage) => {
+            try {
+                await this.onDiscordMessageUpdate(oldMessage, newMessage)
+            } catch (error) {
+                console.error(error)
+            }
+        })
         // Consider handling thread delete events as well.
         await this.client.login(this.config.discordToken)
-        this.chat.onMessage(this.onMessage.bind(this))
+        this.chat.onMessage(async (userId, message) => {
+            try {
+                await this.onMessage(userId, message)
+            } catch (error) {
+                console.error(error)
+            }
+        })
         this.guild = await this.client.guilds.fetch({ guild: CONFIG.discordServerId, force: true })
         const channelId = this.config.discordChannelId
         const channel = await this.client.channels.fetch(channelId)
