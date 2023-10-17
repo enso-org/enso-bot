@@ -205,6 +205,7 @@ class Bot {
                         this.db.createUser({
                             id: dbUserId,
                             discordId: authorId,
+                            ip: null,
                             name: message.content,
                             avatarUrl: avatar.proxyURL,
                             currentThreadId: null,
@@ -357,6 +358,7 @@ class Bot {
                     this.db.createUser({
                         id: message.userId,
                         discordId: null,
+                        ip: null,
                         name: message.userName,
                         avatarUrl: null,
                         currentThreadId: null,
@@ -364,7 +366,21 @@ class Bot {
                 }
                 break
             }
-            case chat.ChatMessageDataType.authenticate: {
+            case chat.ChatMessageDataType.internalAuthenticateAnonymously: {
+                if (!this.db.hasUser(message.userId)) {
+                    this.db.createUser({
+                        id: message.userId,
+                        discordId: null,
+                        ip: message.ip,
+                        name: `Anonymous (${message.ip})`,
+                        avatarUrl: null,
+                        currentThreadId: null,
+                    })
+                }
+                break
+            }
+            case chat.ChatMessageDataType.authenticate:
+            case chat.ChatMessageDataType.authenticateAnonymously: {
                 const threads = this.db.getUserThreads(userId)
                 await this.chat.send(userId, {
                     type: chat.ChatMessageDataType.serverThreads,
@@ -377,7 +393,7 @@ class Bot {
                 await this.sendThread(
                     userId,
                     this.db.getUser(userId).currentThreadId,
-                    message.type,
+                    chat.ChatMessageDataType.authenticate,
                     null
                 )
                 break
