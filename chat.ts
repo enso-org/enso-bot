@@ -270,10 +270,10 @@ function mustBeOverridden(name: string) {
 export class Chat {
     private static instance: Chat
     server: ws.WebSocketServer
-    ipToUser: Record<string /* Client IP */, schema.UserId> = {}
+    ipToUser = new Map<string /* Client IP */, schema.UserId>()
     /** Required only to find the correct `ipToUser` entry to clean up. */
-    userToIp: Record<schema.UserId, string /* Client IP */> = {}
-    userToWebsocket: Record<schema.UserId, ws.WebSocket> = {}
+    userToIp = new Map<schema.UserId, string /* Client IP */>()
+    userToWebsocket = new Map<schema.UserId, ws.WebSocket>()
     messageCallback: (
         userId: schema.UserId,
         message: ChatClientMessageData | ChatInternalMessageData
@@ -284,6 +284,10 @@ export class Chat {
         this.server.on('connection', (websocket, req) => {
             websocket.on('error', error => {
                 this.onWebSocketError(websocket, req, error)
+            })
+
+            websocket.on('close', (code, reason) => {
+                this.onWebSocketClose(websocket, req, code, reason)
             })
 
             websocket.on('message', (data, isBinary) => {
@@ -303,20 +307,17 @@ export class Chat {
     }
 
     async send(userId: schema.UserId, message: ChatServerMessageData) {
-        const websocket = this.userToWebsocket[userId]
+        const websocket = this.userToWebsocket.get(userId)
         if (websocket == null) {
             // The user is not online. This is not an error.
             return
         } else if (websocket.readyState !== websocket.OPEN) {
-            // This is safe as the format of all keys are highly restricted.
-            /* eslint-disable @typescript-eslint/no-dynamic-delete */
-            delete this.userToWebsocket[userId]
-            const ip = this.userToIp[userId]
+            this.userToWebsocket.delete(userId)
+            const ip = this.userToIp.get(userId)
+            this.userToIp.delete(userId)
             if (ip != null) {
-                delete this.userToIp[userId]
-                delete this.ipToUser[ip]
+                this.ipToUser.delete(ip)
             }
-            /* eslint-enable @typescript-eslint/no-dynamic-delete */
             return
         } else {
             return new Promise<void>((resolve, reject) => {
@@ -331,12 +332,43 @@ export class Chat {
         }
     }
 
+    protected getClientAddress(request: http.IncomingMessage) {
+        const rawForwardedFor = request.headers['x-forwarded-for']
+        const forwardedFor =
+            typeof rawForwardedFor === 'string' ? rawForwardedFor : rawForwardedFor?.[0]
+        return forwardedFor?.split(',')[0]?.trim() ?? request.socket.remoteAddress
+    }
+
+    protected removeClient(request: http.IncomingMessage) {
+        const clientAddress = this.getClientAddress(request)
+        if (clientAddress != null) {
+            const userId = this.ipToUser.get(clientAddress)
+            this.ipToUser.delete(clientAddress)
+            if (userId != null) {
+                this.userToIp.delete(userId)
+                this.userToWebsocket.delete(userId)
+            }
+        }
+    }
+
     protected onWebSocketError(
         _websocket: ws.WebSocket,
-        _request: http.IncomingMessage,
+        request: http.IncomingMessage,
         error: Error
     ) {
         console.error(`WebSocket error: ${error.toString()}`)
+        this.removeClient(request)
+    }
+
+    protected onWebSocketClose(
+        _websocket: ws.WebSocket,
+        request: http.IncomingMessage,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        _code: number,
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        _reason: Buffer
+    ) {
+        this.removeClient(request)
     }
 
     protected async onWebSocketMessage(
@@ -348,12 +380,12 @@ export class Chat {
         if (isBinary) {
             console.error()
         }
-        const clientAddress = request.socket.remoteAddress
-        if (clientAddress) {
+        const clientAddress = this.getClientAddress(request)
+        if (clientAddress != null) {
             // This acts as the server so it must not assume the message is valid.
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-base-to-string
             const message: ChatClientMessageData = JSON.parse(data.toString())
-            let userId = this.ipToUser[clientAddress]
+            let userId = this.ipToUser.get(clientAddress)
             if (message.type !== ChatMessageDataType.authenticate) {
                 // TODO[sb]: Is it dangerous to log client IPs?
                 if (userId == null) {
@@ -381,9 +413,9 @@ export class Chat {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                 const userInfo: User = await userInfoRequest.json()
                 userId = newtype.asNewtype<schema.UserId>(`${userInfo.id} ${userInfo.email}`)
-                this.ipToUser[clientAddress] = userId
-                this.userToIp[userId] = clientAddress
-                this.userToWebsocket[userId] = websocket
+                this.ipToUser.set(clientAddress, userId)
+                this.userToIp.set(userId, clientAddress)
+                this.userToWebsocket.set(userId, websocket)
                 await this.messageCallback(userId, {
                     type: ChatMessageDataType.internalAuthenticate,
                     userId,
