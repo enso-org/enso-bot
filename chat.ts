@@ -378,7 +378,10 @@ export class Chat {
         isBinary: boolean
     ) {
         if (isBinary) {
-            console.error()
+            console.error('Binary messages are not supported.')
+            // This is fine, as binary messages cannot be handled by this application.
+            // eslint-disable-next-line no-restricted-syntax
+            return
         }
         const clientAddress = this.getClientAddress(request)
         if (clientAddress != null) {
