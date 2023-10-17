@@ -120,7 +120,7 @@ export class Database {
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(80) PRIMARY KEY,
                 discordId VARCHAR(32) UNIQUE,
-                ip VARCHAR(39) NOT NULL,
+                ip VARCHAR(39),
                 name VARCHAR(100) NOT NULL,
                 avatarUrl TEXT,
                 currentThreadId VARCHAR(25)
