@@ -23,7 +23,7 @@ const tsEslintParser = require('@typescript-eslint/parser')
  * In particular, `string-length` supports ESM but its type definitions don't.
  * `yargs` and `react-hot-toast` are modules we explicitly want the default imports of.
  * `node:process` is here because `process.on` does not exist on the namespace import. */
-const DEFAULT_IMPORT_ONLY_MODULES = 'better-sqlite3'
+const DEFAULT_IMPORT_ONLY_MODULES = 'better-sqlite3|validator.+'
 const DIR_NAME = __dirname
 const NAME = 'enso'
 const STRING_LITERAL = ':matches(Literal[raw=/^["\']/], TemplateLiteral)'

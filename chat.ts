@@ -2,6 +2,7 @@
 import * as http from 'node:http'
 
 import * as ws from 'ws'
+import isEmail from 'validator/es/lib/isEmail'
 
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
@@ -105,7 +106,7 @@ export interface ChatInternalAuthenticateMessageData
 export interface ChatInternalAuthenticateAnonymouslyMessageData
     extends ChatBaseMessageData<ChatMessageDataType.internalAuthenticateAnonymously> {
     userId: schema.UserId
-    ip: schema.IPAddress
+    email: schema.EmailAddress
 }
 
 export type ChatInternalMessageData =
@@ -205,7 +206,9 @@ export interface ChatAuthenticateMessageData
 
 /** Sent whenever the user opens the chat sidebar. */
 export interface ChatAuthenticateAnonymouslyMessageData
-    extends ChatBaseMessageData<ChatMessageDataType.authenticateAnonymously> {}
+    extends ChatBaseMessageData<ChatMessageDataType.authenticateAnonymously> {
+    email: schema.EmailAddress
+}
 
 /** Sent when the user is requesting scrollback history. */
 export interface ChatHistoryBeforeMessageData
@@ -382,7 +385,7 @@ export class Chat {
                     console.error(
                         `The client at ${clientAddress} sent an invalid authorization token.`
                     )
-                    // This is fine, as this is an unrecoverable error.
+                    // This is an unrecoverable error.
                     // eslint-disable-next-line no-restricted-syntax
                     return
                 }
@@ -402,10 +405,16 @@ export class Chat {
                 this.ipToUser[clientAddress] = userId
                 this.userToIp[userId] = clientAddress
                 this.userToWebsocket[userId] = websocket
+                if (typeof message.email !== 'string' || !isEmail(message.email)) {
+                    websocket.close()
+                    // This is an unrecoverable error.
+                    // eslint-disable-next-line no-restricted-syntax
+                    return
+                }
                 await this.messageCallback(userId, {
                     type: ChatMessageDataType.internalAuthenticateAnonymously,
                     userId,
-                    ip: newtype.asNewtype<schema.IPAddress>(clientAddress),
+                    email: message.email,
                 })
             } else {
                 // TODO[sb]: Is it dangerous to log client IPs?

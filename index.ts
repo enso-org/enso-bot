@@ -205,7 +205,7 @@ class Bot {
                         this.db.createUser({
                             id: dbUserId,
                             discordId: authorId,
-                            ip: null,
+                            email: null,
                             name: message.content,
                             avatarUrl: avatar.proxyURL,
                             currentThreadId: null,
@@ -358,7 +358,7 @@ class Bot {
                     this.db.createUser({
                         id: message.userId,
                         discordId: null,
-                        ip: null,
+                        email: null,
                         name: message.userName,
                         avatarUrl: null,
                         currentThreadId: null,
@@ -371,16 +371,15 @@ class Bot {
                     this.db.createUser({
                         id: message.userId,
                         discordId: null,
-                        ip: message.ip,
-                        name: `Anonymous (${message.ip})`,
+                        email: message.email,
+                        name: `${message.email}`,
                         avatarUrl: null,
                         currentThreadId: null,
                     })
                 }
                 break
             }
-            case chat.ChatMessageDataType.authenticate:
-            case chat.ChatMessageDataType.authenticateAnonymously: {
+            case chat.ChatMessageDataType.authenticate: {
                 const threads = this.db.getUserThreads(userId)
                 await this.chat.send(userId, {
                     type: chat.ChatMessageDataType.serverThreads,
@@ -398,7 +397,13 @@ class Bot {
                 )
                 break
             }
+            case chat.ChatMessageDataType.authenticateAnonymously: {
+                // Do not send any message history.
+                break
+            }
             case chat.ChatMessageDataType.historyBefore: {
+                const user = this.db.getUser(userId)
+                if (user.email) break // The user is chatting from the website, which does not support history.
                 await this.sendThread(
                     userId,
                     this.db.getUser(userId).currentThreadId,
