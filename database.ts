@@ -20,6 +20,7 @@ export class Database {
     private readonly database: sqlite.Database
     private readonly getUserStatement: sqlite.Statement
     private readonly getUserByDiscordIdStatement: sqlite.Statement
+    private readonly getUserByEmailStatement: sqlite.Statement
     private readonly createUserStatement: sqlite.Statement
     private readonly updateUserStatement: sqlite.Statement
     private readonly hasUserStatement: sqlite.Statement
@@ -41,11 +42,14 @@ export class Database {
         this.database = sqlite(path)
         this.init()
         this.createUserStatement = this.database.prepare(
-            'INSERT INTO users (id, discordId, name, avatarUrl, currentThreadId) VALUES (?, ?, ?, ?, ?);'
+            'INSERT INTO users (id, discordId, email, name, avatarUrl, currentThreadId) VALUES (?, ?, ?, ?, ?, ?);'
         )
         this.getUserStatement = this.database.prepare('SELECT * FROM users WHERE id = ? LIMIT 1;')
         this.getUserByDiscordIdStatement = this.database.prepare(
             'SELECT * FROM users WHERE discordId = ? LIMIT 1;'
+        )
+        this.getUserByEmailStatement = this.database.prepare(
+            'SELECT * FROM users WHERE email = ? LIMIT 1;'
         )
         this.updateUserStatement = this.database.prepare(
             'UPDATE users SET discordId=?, name=?, avatarUrl=?, currentThreadId=? WHERE id=?;'
@@ -114,8 +118,9 @@ export class Database {
                 version INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS users (
-                id VARCHAR(40) PRIMARY KEY,
+                id VARCHAR(80) PRIMARY KEY,
                 discordId VARCHAR(32) UNIQUE,
+                email VARCHAR(100), -- MUST only be present for anonymous users on the website
                 name VARCHAR(100) NOT NULL,
                 avatarUrl TEXT,
                 currentThreadId VARCHAR(25)
@@ -147,6 +152,7 @@ export class Database {
         this.createUserStatement.run(
             user.id,
             user.discordId,
+            user.email,
             user.name,
             user.avatarUrl,
             user.currentThreadId
@@ -164,6 +170,12 @@ export class Database {
         // This is safe as the schema is known statically.
         // eslint-disable-next-line no-restricted-syntax
         return (this.getUserByDiscordIdStatement.get(discordUserId) ?? null) as schema.User | null
+    }
+
+    getUserByEmail(email: schema.EmailAddress): schema.User | null {
+        // This is safe as the schema is known statically.
+        // eslint-disable-next-line no-restricted-syntax
+        return (this.getUserByEmailStatement.get(email) ?? null) as schema.User | null
     }
 
     updateUser(userId: schema.UserId, fn: (user: schema.User) => schema.User): schema.User {

@@ -8,12 +8,14 @@ import * as reactionModule from './reaction'
 
 export type UserId = newtype.Newtype<string, 'UserId'>
 export type DiscordUserId = newtype.Newtype<string, 'DiscordUserId'>
+export type EmailAddress = newtype.Newtype<string, 'EmailAddress'>
 export type ThreadId = newtype.Newtype<string, 'ThreadId'>
 export type MessageId = newtype.Newtype<string, 'MessageId'>
 
 export interface User {
     id: UserId
     discordId: DiscordUserId | null
+    email: EmailAddress | null
     name: string
     /** Null when the user has not yet set an avatar. */
     avatarUrl: string | null

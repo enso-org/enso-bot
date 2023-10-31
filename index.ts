@@ -205,6 +205,7 @@ class Bot {
                         this.db.createUser({
                             id: dbUserId,
                             discordId: authorId,
+                            email: null,
                             name: message.content,
                             avatarUrl: avatar.proxyURL,
                             currentThreadId: null,
@@ -357,7 +358,21 @@ class Bot {
                     this.db.createUser({
                         id: message.userId,
                         discordId: null,
+                        email: null,
                         name: message.userName,
+                        avatarUrl: null,
+                        currentThreadId: null,
+                    })
+                }
+                break
+            }
+            case chat.ChatMessageDataType.internalAuthenticateAnonymously: {
+                if (!this.db.hasUser(message.userId)) {
+                    this.db.createUser({
+                        id: message.userId,
+                        discordId: null,
+                        email: message.email,
+                        name: `${message.email}`,
                         avatarUrl: null,
                         currentThreadId: null,
                     })
@@ -377,12 +392,18 @@ class Bot {
                 await this.sendThread(
                     userId,
                     this.db.getUser(userId).currentThreadId,
-                    message.type,
+                    chat.ChatMessageDataType.authenticate,
                     null
                 )
                 break
             }
+            case chat.ChatMessageDataType.authenticateAnonymously: {
+                // Do not send any message history.
+                break
+            }
             case chat.ChatMessageDataType.historyBefore: {
+                const user = this.db.getUser(userId)
+                if (user.email) break // The user is chatting from the website, which does not support history.
                 await this.sendThread(
                     userId,
                     this.db.getUser(userId).currentThreadId,

@@ -2,6 +2,7 @@
 import * as http from 'node:http'
 
 import * as ws from 'ws'
+import isEmail from 'validator/es/lib/isEmail'
 
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
@@ -45,8 +46,10 @@ export type MessageId = newtype.Newtype<string, 'MessageId'>
 
 export enum ChatMessageDataType {
     // Messages internal to the server.
-    /** Like the authenticate message, but with user details. */
+    /** Like the `authenticate` message, but with user details. */
     internalAuthenticate = 'internal-authenticate',
+    /** Like the `authenticateAnonymously` message, but with user details. */
+    internalAuthenticateAnonymously = 'internal-authenticate-anonymously',
     // Messages from the server to the client.
     /** Metadata for all threads associated with a user. */
     serverThreads = 'server-threads',
@@ -62,6 +65,8 @@ export enum ChatMessageDataType {
     // Messages from the client to the server.
     /** The authentication token. */
     authenticate = 'authenticate',
+    /** Sent by a user that is not logged in. This is currently only used on the website. */
+    authenticateAnonymously = 'authenticate-anonymously',
     /** Sent when the user is requesting scrollback history. */
     historyBefore = 'history-before',
     /** Create a new thread with an initial message. */
@@ -97,9 +102,16 @@ export interface ChatInternalAuthenticateMessageData
     userName: string
 }
 
-// This is supposed be a union, however it only has one member.
-// eslint-disable-next-line no-restricted-syntax
-export type ChatInternalMessageData = ChatInternalAuthenticateMessageData
+/** Sent to the main file with user IP. */
+export interface ChatInternalAuthenticateAnonymouslyMessageData
+    extends ChatBaseMessageData<ChatMessageDataType.internalAuthenticateAnonymously> {
+    userId: schema.UserId
+    email: schema.EmailAddress
+}
+
+export type ChatInternalMessageData =
+    | ChatInternalAuthenticateAnonymouslyMessageData
+    | ChatInternalAuthenticateMessageData
 
 // ======================================
 // === Messages from server to client ===
@@ -192,6 +204,12 @@ export interface ChatAuthenticateMessageData
     accessToken: string
 }
 
+/** Sent whenever the user opens the chat sidebar. */
+export interface ChatAuthenticateAnonymouslyMessageData
+    extends ChatBaseMessageData<ChatMessageDataType.authenticateAnonymously> {
+    email: schema.EmailAddress
+}
+
 /** Sent when the user is requesting scrollback history. */
 export interface ChatHistoryBeforeMessageData
     extends ChatBaseMessageData<ChatMessageDataType.historyBefore> {
@@ -247,6 +265,7 @@ export interface ChatMarkAsReadMessageData
 
 /** A message from the client to the server. */
 export type ChatClientMessageData =
+    | ChatAuthenticateAnonymouslyMessageData
     | ChatAuthenticateMessageData
     | ChatHistoryBeforeMessageData
     | ChatMarkAsReadMessageData
@@ -389,15 +408,7 @@ export class Chat {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-base-to-string
             const message: ChatClientMessageData = JSON.parse(data.toString())
             let userId = this.ipToUser.get(clientAddress)
-            if (message.type !== ChatMessageDataType.authenticate) {
-                // TODO[sb]: Is it dangerous to log client IPs?
-                if (userId == null) {
-                    console.error(`The client at ${clientAddress} is not authenticated.`)
-                    // This is fine, as this is an unrecoverable error.
-                    // eslint-disable-next-line no-restricted-syntax
-                    return
-                }
-            } else {
+            if (message.type === ChatMessageDataType.authenticate) {
                 const userInfoRequest = await fetch(USERS_ME_PATH, {
                     headers: {
                         // The names come from a third-party API and cannot be changed.
@@ -409,7 +420,7 @@ export class Chat {
                     console.error(
                         `The client at ${clientAddress} sent an invalid authorization token.`
                     )
-                    // This is fine, as this is an unrecoverable error.
+                    // This is an unrecoverable error.
                     // eslint-disable-next-line no-restricted-syntax
                     return
                 }
@@ -424,6 +435,30 @@ export class Chat {
                     userId,
                     userName: userInfo.name,
                 })
+            } else if (message.type === ChatMessageDataType.authenticateAnonymously) {
+                userId = newtype.asNewtype<schema.UserId>(clientAddress)
+                this.ipToUser.set(clientAddress, userId)
+                this.userToIp.set(userId, clientAddress)
+                this.userToWebsocket.set(userId, websocket)
+                if (typeof message.email !== 'string' || !isEmail(message.email)) {
+                    websocket.close()
+                    // This is an unrecoverable error.
+                    // eslint-disable-next-line no-restricted-syntax
+                    return
+                }
+                await this.messageCallback(userId, {
+                    type: ChatMessageDataType.internalAuthenticateAnonymously,
+                    userId,
+                    email: message.email,
+                })
+            } else {
+                // TODO[sb]: Is it dangerous to log client IPs?
+                if (userId == null) {
+                    console.error(`The client at ${clientAddress} is not authenticated.`)
+                    // This is fine, as this is an unrecoverable error.
+                    // eslint-disable-next-line no-restricted-syntax
+                    return
+                }
             }
             await this.messageCallback(userId, message)
         }
