@@ -137,13 +137,12 @@ class Bot {
 
     async onDiscordMessageCreate(message: discord.Message) {
         const threadId = getMessageThreadId(message)
-        if (
+        if (message.author.bot || message.author.system) {
+            // Ignore automated messages.
+        } else if (
             message.channel.isThread() &&
             this.db.hasThread(threadId) &&
-            message.type === discord.MessageType.Default &&
-            // This is required so that the bot does not try to add its own message to the DB.
-            !message.author.bot &&
-            !message.author.system
+            message.type === discord.MessageType.Default
         ) {
             const authorId = getMessageAuthorId(message)
             let staff = this.db.getUserByDiscordId(authorId)
