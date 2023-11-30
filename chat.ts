@@ -7,13 +7,7 @@ import isEmail from 'validator/es/lib/isEmail'
 import * as newtype from './newtype'
 import * as reactionModule from './reaction'
 import * as schema from './schema'
-
-// =================
-// === Constants ===
-// =================
-
-/** The endpoint from which user data is retrieved. */
-const USERS_ME_PATH = 'https://7aqkn3tnbc.execute-api.eu-west-1.amazonaws.com/users/me'
+import CONFIG from './config.json' assert { type: 'json' }
 
 // ==================
 // === Re-exports ===
@@ -297,16 +291,18 @@ export class Chat {
         userId: schema.UserId,
         message: ChatClientMessageData | ChatInternalMessageData
     ) => Promise<void> | void = mustBeOverridden('Chat.messageCallback')
+    closeCallback?: (userId: schema.UserId) => Promise<void> | void
+    errorCallback?: (userId: schema.UserId, error: Error) => Promise<void> | void
 
     constructor(port: number) {
         this.server = new ws.WebSocketServer({ port })
         this.server.on('connection', (websocket, req) => {
             websocket.on('error', error => {
-                this.onWebSocketError(websocket, req, error)
+                void this.onWebSocketError(websocket, req, error)
             })
 
             websocket.on('close', (code, reason) => {
-                this.onWebSocketClose(websocket, req, code, reason)
+                void this.onWebSocketClose(websocket, req, code, reason)
             })
 
             websocket.on('message', (data, isBinary) => {
@@ -323,6 +319,14 @@ export class Chat {
 
     onMessage(callback: NonNullable<typeof this.messageCallback>) {
         this.messageCallback = callback
+    }
+
+    onClose(callback: NonNullable<typeof this.closeCallback>) {
+        this.closeCallback = callback
+    }
+
+    onError(callback: NonNullable<typeof this.errorCallback>) {
+        this.errorCallback = callback
     }
 
     async send(userId: schema.UserId, message: ChatServerMessageData) {
@@ -370,16 +374,23 @@ export class Chat {
         }
     }
 
-    protected onWebSocketError(
+    protected async onWebSocketError(
         _websocket: ws.WebSocket,
         request: http.IncomingMessage,
         error: Error
     ) {
         console.error(`WebSocket error: ${error.toString()}`)
+        if (this.errorCallback != null) {
+            const clientAddress = this.getClientAddress(request)
+            let userId = clientAddress == null ? null : this.ipToUser.get(clientAddress)
+            if (userId != null) {
+                await this.errorCallback(userId, error)
+            }
+        }
         this.removeClient(request)
     }
 
-    protected onWebSocketClose(
+    protected async onWebSocketClose(
         _websocket: ws.WebSocket,
         request: http.IncomingMessage,
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -387,6 +398,13 @@ export class Chat {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         _reason: Buffer
     ) {
+        if (this.closeCallback != null) {
+            const clientAddress = this.getClientAddress(request)
+            let userId = clientAddress == null ? null : this.ipToUser.get(clientAddress)
+            if (userId != null) {
+                await this.closeCallback(userId)
+            }
+        }
         this.removeClient(request)
     }
 
@@ -409,7 +427,7 @@ export class Chat {
             const message: ChatClientMessageData = JSON.parse(data.toString())
             let userId = this.ipToUser.get(clientAddress)
             if (message.type === ChatMessageDataType.authenticate) {
-                const userInfoRequest = await fetch(USERS_ME_PATH, {
+                const userInfoRequest = await fetch(CONFIG.userDataEndpoint, {
                     headers: {
                         // The names come from a third-party API and cannot be changed.
                         // eslint-disable-next-line @typescript-eslint/naming-convention

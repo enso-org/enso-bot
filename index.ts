@@ -4,6 +4,7 @@ import * as discord from 'discord.js'
 import * as chat from './chat'
 import * as database from './database'
 import * as newtype from './newtype'
+import * as pipedrive from './pipedrive'
 import * as schema from './schema'
 
 import CONFIG from './config.json' assert { type: 'json' }
@@ -91,6 +92,8 @@ class Bot {
                 console.error(error)
             }
         })
+        this.chat.onClose(this.updatePipedrive.bind(this))
+        this.chat.onError(this.updatePipedrive.bind(this))
         this.guild = await this.client.guilds.fetch({ guild: CONFIG.discordServerId, force: true })
         const channelId = this.config.discordChannelId
         const channel = await this.client.channels.fetch(channelId)
@@ -371,7 +374,7 @@ class Bot {
                         id: message.userId,
                         discordId: null,
                         email: message.email,
-                        name: `${message.email}`,
+                        name: message.email,
                         avatarUrl: null,
                         currentThreadId: null,
                     })
@@ -533,6 +536,162 @@ class Bot {
             }
         }
     }
+
+    protected async updatePipedrive(userId: schema.UserId) {
+        const user = this.db.getUser(userId)
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (!user) {
+            console.error(`Could not find user with id '${userId}'`)
+        } else if (pipedrive.ENABLED && user.email) {
+            const email = user.email
+            try {
+                /* eslint-disable @typescript-eslint/naming-convention */
+                const leadSearch = await pipedrive.searchLeads({
+                    term: `Website visitor (${email})`,
+                    fields: { title: true },
+                    exact_match: true,
+                    limit: 1,
+                })
+                if (!leadSearch.success) {
+                    // eslint-disable-next-line no-restricted-syntax, @typescript-eslint/no-throw-literal
+                    throw leadSearch
+                }
+                let leadId = leadSearch.data.items[0]?.item.id
+                if (leadId == null) {
+                    const personSearch = await pipedrive.searchPersons({
+                        term: email,
+                        fields: { email: true },
+                        exact_match: true,
+                    })
+                    if (!personSearch.success) {
+                        // eslint-disable-next-line no-restricted-syntax, @typescript-eslint/no-throw-literal
+                        throw personSearch
+                    }
+                    let personId = personSearch.data.items[0]?.item.id
+                    if (personId == null) {
+                        const newPerson = await pipedrive.addPerson({
+                            name: email,
+                            email: [{ value: email, primary: 'true' }],
+                        })
+                        if (!newPerson.success) {
+                            // eslint-disable-next-line no-restricted-syntax, @typescript-eslint/no-throw-literal
+                            throw newPerson
+                        }
+                        personId = newPerson.data.id
+                    }
+                    const newLead = await pipedrive.addLead({
+                        title: `Website visitor (${email})`,
+                        person_id: personId,
+                    })
+                    if (!newLead.success) {
+                        // eslint-disable-next-line no-restricted-syntax, @typescript-eslint/no-throw-literal
+                        throw newLead
+                    }
+                    leadId = newLead.data.id
+                }
+                const maxMessages = 1_000
+                const messages = !user.currentThreadId
+                    ? null
+                    : this.db.getThreadLastMessages(user.currentThreadId, maxMessages, null)
+                const staffNameCache: Record<schema.DiscordUserId, string> = {}
+                const getStaffName = (id: schema.DiscordUserId) => {
+                    const name = staffNameCache[id]
+                    if (name != null) {
+                        return name
+                    } else {
+                        const staffUser = this.db.getUserByDiscordId(id)
+                        if (staffUser == null) {
+                            return ''
+                        } else {
+                            staffNameCache[id] = staffUser.name
+                            return staffUser.name
+                        }
+                    }
+                }
+                let staffMessageCount = 0
+                const chatHistory = !messages
+                    ? '<span style="color: #eb3a00;">No message history found.</span>'
+                    : '<h3 style="font-weight: bold">Message History:</h3>\n<table>\n  <tbody>\n' +
+                      messages
+                          .map(message => {
+                              if (message.discordAuthorId != null) {
+                                  staffMessageCount += 1
+                                  return (
+                                      '    <tr><td style="font-weight: bold; color: #0666be; padding: 0 8px">Staff</td>' +
+                                      `<td style="font-weight: bold; color: #0666be; padding: 0 8px">${escapeHTML(
+                                          getStaffName(message.discordAuthorId)
+                                      )}</td>` +
+                                      `<td style="font-style: italic; padding: 0 8px">${new Date(
+                                          message.createdAt
+                                      ).toISOString()}</td>` +
+                                      `<td style="padding: 0 8px">${escapeHTML(
+                                          message.content
+                                      )}</td></tr>`
+                                  )
+                              } else {
+                                  return (
+                                      '    <tr><td style="font-weight: bold; color: lch(58 65.8 142.73); padding: 0 8px">Customer</td>' +
+                                      `<td style="font-weight: bold; color: lch(58 65.8 142.73)">${escapeHTML(
+                                          email
+                                      )}</td>` +
+                                      `<td style="font-style: italic; padding: 0 8px">${new Date(
+                                          message.createdAt
+                                      ).toISOString()}</td>` +
+                                      `<td style="padding: 0 8px">${escapeHTML(
+                                          message.content
+                                      )}</td></tr>`
+                                  )
+                              }
+                          })
+                          .join('\n') +
+                      '\n  </tbody>\n</table>'
+                const startEpochMs = messages?.[0]?.createdAt
+                const endEpochMs = messages?.[messages.length - 1]?.createdAt
+                const durationMs =
+                    startEpochMs != null && endEpochMs != null ? endEpochMs - startEpochMs : null
+                const hourMs = 3_600_000
+                const minuteMs = 60_000
+                const hourMinutes = 60
+                const duration =
+                    durationMs != null
+                        ? String(Math.floor(durationMs / hourMs)).padStart(2, '0') +
+                          ':' +
+                          String(Math.floor(durationMs / minuteMs) % hourMinutes).padStart(2, '0')
+                        : null
+                const now = new Date()
+                const today = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(
+                    2,
+                    '0'
+                )}-${String(now.getUTCDate()).padStart(2, '0')}`
+                await pipedrive.addActivity({
+                    subject: 'Website Chat',
+                    lead_id: leadId,
+                    note: chatHistory,
+                    ...(duration != null ? { duration } : {}),
+                    ...(staffMessageCount === 0 ? { due_date: today } : {}),
+                })
+                /* eslint-enable @typescript-eslint/naming-convention */
+            } catch (error) {
+                console.error(
+                    `Failed to update Pipedrive activity for user '${user.email}':`,
+                    error
+                )
+            }
+        }
+    }
+}
+
+function escapeHTML(str: string) {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    const mapping: Record<string, string> = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '>': '&gt;',
+    }
+    /* eslint-enable @typescript-eslint/naming-convention */
+    return str.replace(/[&<>"']/g, m => mapping[m] ?? '')
 }
 
 const BOT = new Bot(CONFIG, chat.Chat.default(WEBSOCKET_PORT))
